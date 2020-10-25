@@ -7,6 +7,7 @@
 use std::{convert::TryInto, env::var, io};
 
 use winapi::um::wincon::*;
+use winapi::um::wincontypes::{INPUT_RECORD, WINDOW_BUFFER_SIZE_EVENT};
 use winapi_util::{console as cons, HandleRef};
 
 use crate::Error;
@@ -32,7 +33,16 @@ pub fn get_window_size() -> Result<(usize, usize), Error> {
 
 pub fn register_winsize_change_signal_handler() -> Result<(), Error> { Ok(()) }
 
-pub fn has_window_size_changed() -> bool { false }
+pub fn has_window_size_changed() -> bool { 
+    let mut buf: [INPUT_RECORD; 1024] = [Default::default(); 1024];
+    let mut read: u32 = 0;
+    unsafe {
+        PeekConsoleInputW(
+            std::os::windows::io::AsRawHandle::as_raw_handle(&HandleRef::stdin()), 
+            buf.as_mut_ptr(), 1024, &mut read)
+    };
+    return buf.iter().any(|x| x.EventType == WINDOW_BUFFER_SIZE_EVENT);
+}
 
 /// Set the terminal mode.
 #[allow(clippy::trivially_copy_pass_by_ref)]
@@ -50,9 +60,9 @@ pub fn enable_raw_mode() -> Result<TermMode, Error> {
     let (mode_in0, mode_out0) = (cons::mode(HandleRef::stdin())?, cons::mode(HandleRef::stdout())?);
 
     // (mode_in, mode_out) are the new terminal modes
-    let mode_in = (mode_in0 | ENABLE_VIRTUAL_TERMINAL_INPUT)
+    let mode_in = (mode_in0 | ENABLE_VIRTUAL_TERMINAL_INPUT) | ENABLE_WINDOW_INPUT
         & !(ENABLE_PROCESSED_INPUT | ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT);
-    let mode_out = (mode_out0 | ENABLE_VIRTUAL_TERMINAL_PROCESSING)
+    let mode_out = (mode_out0 | ENABLE_VIRTUAL_TERMINAL_PROCESSING) | ENABLE_WINDOW_INPUT
         | (DISABLE_NEWLINE_AUTO_RETURN | ENABLE_PROCESSED_OUTPUT);
 
     set_term_mode(&(mode_in, mode_out))?;
